@@ -91,7 +91,8 @@ class User(UserMixin, db.Model):
     about_me = db.Column(db.TEXT())
     member_since = db.Column(db.DateTime(), default=datetime.utcnow)
     last_seen = db.Column(db.DateTime(), default=datetime.utcnow)
-    avatar_hash = db.Column(db.String(32))   #缓存的MD5值
+    # 缓存的MD5值
+    avatar_hash = db.Column(db.String(32))
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     followed = db.relationship('Follow', foreign_keys=[Follow.follower_id],
                                backref=db.backref('follower', lazy='joined'),
@@ -113,31 +114,39 @@ class User(UserMixin, db.Model):
             self.avatar_hash = hashlib.md5(self.email.encode('utf-8')).hexdigest()
         self.follow(self)
 
+    # 更新登陆时间
     def ping(self):
         self.last_seen = datetime.utcnow()
         db.session.add(self)
 
+    # 生成头像
     def gravatar(self, size=100, default='identicon', rating='g'):
         url = 'https://secure.gravatar.com/avatar'
         hash = self.avatar_hash or hashlib.md5(self.email.encode('utf-8')).hexdigest()
         return '{url}/{hash}?s={size}&d={default}&r={rating}'.format(url=url, hash=hash, size=size, default=default,
                                                                      rating=rating)
 
+    # 把password设为只写属性
     @property
     def password(self):
         raise AttributeError('password is not a readable attribute')
 
+    # 生成密码的hash值
     @password.setter
     def password(self, password):
         self.password_hash = generate_password_hash(password)
 
+    # 检查密码与数据库中的hash是否相同
     def verify_password(self, password):
         return check_password_hash(self.password_hash, password)
 
+    # 用itsdangerous生成确认令牌
     def generate_confirmation_token(self, expiration=3600):
         s = Serializer(current_app.config['SECRET_KEY'], expiration)
         return s.dumps({'confirm': self.id}).decode('utf-8')
 
+
+    # 检验令牌
     def confirm(self, token):
         s = Serializer(current_app.config['SECRET_KEY'])
         try:
@@ -233,12 +242,13 @@ class User(UserMixin, db.Model):
 
     def is_followed(self, user):
         return self.followers.filter_by(follower_id=user.id).first() is not None
-# 获取所关注用户的文章
+
+    # 获取所关注用户的文章
     @property
     def followed_posts(self):
         return Post.query.join(Follow, Follow.followed_id == Post.author_id).filter(Follow.follower_id == self.id)
 
-
+    # 让每个User关注自己
     @staticmethod
     def add_self_follows():
         for user in User.query.all():
